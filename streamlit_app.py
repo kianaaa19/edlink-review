@@ -1,70 +1,86 @@
-# =============================================================
-# IMPORTS (torch harus PALING ATAS agar tidak error di Streamlit Cloud)
-# =============================================================
-import torch
 import streamlit as st
-from transformers import pipeline
+import re
 
 # =============================================================
-# LOAD MODEL (dibungkus fungsi supaya tidak dipre-load sebelum torch)
+# SIMPLE TEXT MATCHING ENGINE (NO PIPELINE)
 # =============================================================
-@st.cache_resource(show_spinner=True)
-def load_zsc_model():
-    import torch
-    return pipeline(
-        "zero-shot-classification",
-        model="facebook/bart-large-mnli"
-    )
 
-zsc = load_zsc_model()
+def match_keywords(text, keywords):
+    score = 0
+    for kw in keywords:
+        if kw in text.lower():
+            score += 1
+    return score
 
 # =============================================================
-# LABEL DEFINITIONS
+# TOPIC DEFINITIONS
 # =============================================================
-topic_labels = [
-    "Akses kelas dan materi",
-    "Notifikasi tidak muncul",
-    "Upload tugas",
-    "Login atau SSO",
-    "Navigasi aplikasi",
-    "Fitur tidak lengkap",
-    "Video conference bermasalah",
-    "Bug atau error aplikasi",
-    "Masalah performa atau lemot",
-    "Tampilan atau UI membingungkan"
-]
-
-ict_labels = [
-    "Low ICT literacy",
-    "Medium ICT literacy",
-    "High ICT literacy",
-    "Technical issue (not ICT literacy)"
-]
-
-emotion_labels = [
-    "frustration",
-    "confusion",
-    "annoyance",
-    "overwhelmed",
-    "stress",
-    "satisfaction",
-    "neutral"
-]
+topics = {
+    "Akses kelas dan materi": ["kelas", "materi", "ga bisa akses", "tidak bisa dibuka", "kelas hilang"],
+    "Notifikasi tidak muncul": ["notifikasi", "notif", "ga muncul", "tidak muncul"],
+    "Upload tugas": ["upload", "unggah", "tugas", "gagal upload"],
+    "Login atau SSO": ["login", "sso", "gabisa masuk", "tidak bisa login"],
+    "Navigasi aplikasi": ["menu", "navigasi", "bingung", "tidak tahu dimana"],
+    "Fitur tidak lengkap": ["fitur", "kurang fitur", "fitur tidak ada"],
+    "Video conference bermasalah": ["video", "zoom", "meeting", "vc", "voice"],
+    "Bug atau error aplikasi": ["error", "bug", "force close", "crash"],
+    "Masalah performa atau lemot": ["lemot", "lag", "loading", "lambat", "macet"],
+    "Tampilan atau UI membingungkan": ["tampilan", "ui", "desain", "susah dilihat"]
+}
 
 # =============================================================
-# HELPER FUNCTIONS
+# ICT Literacy Classifier
 # =============================================================
-def classify(text, labels):
-    result = zsc(text, labels, multi_label=False)
-    return result["labels"][0]
+def classify_ict(text):
+    t = text.lower()
 
+    low_kw = ["ga ngerti", "gak ngerti", "nggak ngerti", "bingung", "cara pakai", "susah", "ga bisa pakai"]
+    med_kw = ["agak susah", "kadang bingung", "sering bingung"]
+    high_kw = ["mudah digunakan", "gampang", "simple", "langsung paham"]
+    tech_kw = ["error", "bug", "lemot", "crash", "server", "gagal", "tidak bisa dibuka"]
+
+    if any(k in t for k in low_kw):
+        return "Low ICT literacy"
+    if any(k in t for k in med_kw):
+        return "Medium ICT literacy"
+    if any(k in t for k in high_kw):
+        return "High ICT literacy"
+    if any(k in t for k in tech_kw):
+        return "Technical issue (not ICT literacy)"
+
+    return "Medium ICT literacy"
+
+# =============================================================
+# Emotion classifier (lexicon-based)
+# =============================================================
+emotion_lex = {
+    "frustration": ["kesal", "frustasi", "frustrasi", "nyesek", "nyebelin"],
+    "confusion": ["bingung", "tidak paham", "ga ngerti"],
+    "annoyance": ["ganggu", "mengganggu", "nyebelin"],
+    "overwhelmed": ["kewalahan", "overwhelmed", "capek"],
+    "stress": ["stress", "stres", "pusing"],
+    "satisfaction": ["bagus", "mantap", "puas", "oke"],
+    "neutral": []
+}
+
+def classify_emotion(text):
+    t = text.lower()
+    scores = {emo: match_keywords(t, kws) for emo, kws in emotion_lex.items()}
+    best = max(scores, key=scores.get)
+    return best
+
+# =============================================================
+# Sentiment (from rating)
+# =============================================================
 def rating_to_sentiment(r):
-    if r >= 4: return "Positive"
-    elif r == 3: return "Neutral"
-    else: return "Negative"
+    if r >= 4:
+        return "Positive"
+    elif r == 3:
+        return "Neutral"
+    return "Negative"
 
 # =============================================================
-# STREAMLIT UI
+# Streamlit UI
 # =============================================================
 st.set_page_config(page_title="Edlink Review Classifier", layout="centered")
 
@@ -80,28 +96,27 @@ body { background-color: #1A3D7C; }
 """, unsafe_allow_html=True)
 
 st.title("Edlink Review Classification App")
-st.write("Masukkan teks ulasan untuk mendeteksi **Topik**, **ICT Literacy**, **Emotion**, dan **Sentimen**.")
+st.write("Masukkan ulasan untuk mendeteksi **Topik**, **ICT Literacy**, **Emotion**, dan **Sentimen** tanpa model besar.")
 
-# INPUT FIELDS
-review_text = st.text_area("Masukkan Ulasan:", height=200)
-rating = st.selectbox("Pilih Rating (1–5):", [1, 2, 3, 4, 5])
+text = st.text_area("Masukkan Ulasan:", height=200)
+rating = st.selectbox("Rating (1–5):", [1,2,3,4,5])
 
-# =============================================================
-# RUN CLASSIFICATION
-# =============================================================
 if st.button("Klasifikasi Review"):
-    if not review_text.strip():
-        st.warning("Masukkan teks ulasan terlebih dahulu.")
+    if not text.strip():
+        st.warning("Masukkan ulasan terlebih dahulu.")
     else:
-        with st.spinner("Menganalisis ulasan..."):
-            topic = classify(review_text, topic_labels)
-            ict = classify(review_text, ict_labels)
-            emotion = classify(review_text, emotion_labels)
+        with st.spinner("Menganalisis..."):
+
+            # TOPIC
+            topic_scores = {label: match_keywords(text, kws) for label, kws in topics.items()}
+            topic = max(topic_scores, key=topic_scores.get)
+
+            ict = classify_ict(text)
+            emotion = classify_emotion(text)
             sentiment = rating_to_sentiment(rating)
 
-        # OUTPUT
         st.subheader("Hasil Analisis")
-        st.write(f"**Topik Masalah:** {topic}")
+        st.write(f"**Topik:** {topic}")
         st.write(f"**ICT Literacy:** {ict}")
         st.write(f"**Emotion:** {emotion}")
         st.write(f"**Sentiment:** {sentiment}")
