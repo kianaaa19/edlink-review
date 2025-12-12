@@ -134,7 +134,7 @@ sentiment_emoji = {
 # =============================================================
 # UI HEADER
 # =============================================================
-st.title("📘 Edlink Review Classification App")
+st.title("📘 Edlink Review Classification")
 st.write("Masukkan ulasan untuk mendeteksi **Topik**, **ICT Literacy**, **Emotion**, dan **Sentimen**.")
 
 text = st.text_area("📝 Masukkan Ulasan:", height=180)
