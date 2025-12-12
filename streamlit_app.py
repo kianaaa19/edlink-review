@@ -1,5 +1,6 @@
+import torch as torch
+import pandas as pd
 import streamlit as st
-import torch
 from transformers import pipeline
 
 # =============================================================
