@@ -1,18 +1,25 @@
-import torch as torch
-import pandas as pd
+# =============================================================
+# IMPORTS (torch harus PALING ATAS agar tidak error di Streamlit Cloud)
+# =============================================================
+import torch
 import streamlit as st
 from transformers import pipeline
 
 # =============================================================
-# Load Model Pipeline (Stable for Streamlit Cloud)
+# LOAD MODEL (dibungkus fungsi supaya tidak dipre-load sebelum torch)
 # =============================================================
-zsc = pipeline(
-    "zero-shot-classification",
-    model="facebook/bart-large-mnli"
-)
+@st.cache_resource(show_spinner=True)
+def load_zsc_model():
+    import torch
+    return pipeline(
+        "zero-shot-classification",
+        model="facebook/bart-large-mnli"
+    )
+
+zsc = load_zsc_model()
 
 # =============================================================
-# Label Definitions
+# LABEL DEFINITIONS
 # =============================================================
 topic_labels = [
     "Akses kelas dan materi",
@@ -45,30 +52,25 @@ emotion_labels = [
 ]
 
 # =============================================================
-# Utils
+# HELPER FUNCTIONS
 # =============================================================
 def classify(text, labels):
     result = zsc(text, labels, multi_label=False)
     return result["labels"][0]
 
-def rating_to_sentiment(rating):
-    if rating >= 4:
-        return "Positive"
-    elif rating == 3:
-        return "Neutral"
-    else:
-        return "Negative"
+def rating_to_sentiment(r):
+    if r >= 4: return "Positive"
+    elif r == 3: return "Neutral"
+    else: return "Negative"
 
 # =============================================================
-# Streamlit UI
+# STREAMLIT UI
 # =============================================================
 st.set_page_config(page_title="Edlink Review Classifier", layout="centered")
 
 st.markdown("""
 <style>
-body {
-    background-color: #1A3D7C;
-}
+body { background-color: #1A3D7C; }
 .main .block-container {
     background-color: #FFFFFF;
     padding: 2rem;
@@ -80,27 +82,26 @@ body {
 st.title("Edlink Review Classification App")
 st.write("Masukkan teks ulasan untuk mendeteksi **Topik**, **ICT Literacy**, **Emotion**, dan **Sentimen**.")
 
-# Input for prediction
+# INPUT FIELDS
 review_text = st.text_area("Masukkan Ulasan:", height=200)
-
-# Rating for sentiment
 rating = st.selectbox("Pilih Rating (1–5):", [1, 2, 3, 4, 5])
 
 # =============================================================
-# Run Classification
+# RUN CLASSIFICATION
 # =============================================================
 if st.button("Klasifikasi Review"):
-    if review_text.strip() == "":
-        st.warning("Tolong masukkan teks ulasan terlebih dahulu.")
+    if not review_text.strip():
+        st.warning("Masukkan teks ulasan terlebih dahulu.")
     else:
-        with st.spinner("Menganalisis..."):
+        with st.spinner("Menganalisis ulasan..."):
             topic = classify(review_text, topic_labels)
             ict = classify(review_text, ict_labels)
             emotion = classify(review_text, emotion_labels)
             sentiment = rating_to_sentiment(rating)
 
+        # OUTPUT
         st.subheader("Hasil Analisis")
         st.write(f"**Topik Masalah:** {topic}")
-        st.write(f"**Tingkat ICT Literacy:** {ict}")
+        st.write(f"**ICT Literacy:** {ict}")
         st.write(f"**Emotion:** {emotion}")
         st.write(f"**Sentiment:** {sentiment}")
